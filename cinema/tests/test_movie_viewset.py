@@ -23,20 +23,20 @@ def generate_image_file():
     image = Image.new("RGB", (10, 10), color="red")
     image.save(file, "JPEG")
     file.seek(0)
-    return SimpleUploadedFile(
-        "test.jpg", file.read(), content_type="image/jpeg"
-    )
+    return SimpleUploadedFile("test.jpg", file.read(), content_type="image/jpeg")
 
 
 class MovieViewSetTests(APITestCase):
     def setUp(self):
         self.client = APIClient()
+        # створюємо користувачів у тестовій базі
         self.user = get_user_model().objects.create_user(
             email="test@cinema.com", password="testpass"
         )
         self.admin = get_user_model().objects.create_superuser(
-            email="admin@cinema.com", password="adminpass"
+            email="admin@cinema.com", password="AdminPass123"
         )
+        # тестові дані
         self.genre = Genre.objects.create(name="Action")
         self.actor = Actor.objects.create(first_name="John", last_name="Doe")
         self.movie = Movie.objects.create(
@@ -45,27 +45,35 @@ class MovieViewSetTests(APITestCase):
         self.movie.genres.add(self.genre)
         self.movie.actors.add(self.actor)
 
+    def authenticate(self, email, password):
+        """Helper to get JWT token and set credentials"""
+        res = self.client.post("/api/token/", {"email": email, "password": password})
+        self.assertEqual(res.status_code, 200, msg=res.data)  # покаже detail, якщо токен не видали
+        token = res.data.get("access")
+        self.assertIsNotNone(token, msg=res.data)
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer " + token)
+
     def test_list_movies_requires_auth(self):
         res = self.client.get(MOVIE_URL)
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
-        self.client.force_authenticate(user=self.user)
+        self.authenticate("test@cinema.com", "testpass")
         res = self.client.get(MOVIE_URL)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(res.data), 1)
 
     def test_filter_movies_by_title(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate("test@cinema.com", "testpass")
         res = self.client.get(MOVIE_URL, {"title": "Test"})
         self.assertEqual(len(res.data), 1)
 
     def test_filter_movies_by_genre(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate("test@cinema.com", "testpass")
         res = self.client.get(MOVIE_URL, {"genres": str(self.genre.id)})
         self.assertEqual(len(res.data), 1)
 
     def test_filter_movies_by_actor(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate("test@cinema.com", "testpass")
         res = self.client.get(MOVIE_URL, {"actors": str(self.actor.id)})
         self.assertEqual(len(res.data), 1)
 
@@ -74,7 +82,7 @@ class MovieViewSetTests(APITestCase):
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
-        self.client.force_authenticate(user=self.user)
+        self.authenticate("test@cinema.com", "testpass")
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data["title"], self.movie.title)
@@ -87,11 +95,11 @@ class MovieViewSetTests(APITestCase):
             "genres": [self.genre.id],
             "actors": [self.actor.id],
         }
-        self.client.force_authenticate(user=self.user)
+        self.authenticate("test@cinema.com", "testpass")
         res = self.client.post(MOVIE_URL, payload)
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
-        self.client.force_authenticate(user=self.admin)
+        self.authenticate("admin@cinema.com", "AdminPass123")
         res = self.client.post(MOVIE_URL, payload)
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
 
@@ -99,11 +107,11 @@ class MovieViewSetTests(APITestCase):
         url = upload_image_url(self.movie.id)
         image = generate_image_file()
 
-        self.client.force_authenticate(user=self.user)
+        self.authenticate("test@cinema.com", "testpass")
         res = self.client.post(url, {"image": image}, format="multipart")
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
-        self.client.force_authenticate(user=self.admin)
+        self.authenticate("admin@cinema.com", "AdminPass123")
         image = generate_image_file()
         res = self.client.post(url, {"image": image}, format="multipart")
         self.assertEqual(res.status_code, status.HTTP_200_OK)
